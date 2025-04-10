@@ -1,6 +1,10 @@
-name: Archive dist and release
+name: Zip and release
 
-on: [push]
+on:
+  push:
+    # Sequence of patterns matched against refs/tags
+    tags:
+    - '*' # Push events to matching any tag format, i.e. 1.0, 20.15.10
 
 jobs:
   build_and_test:
@@ -8,28 +12,37 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Archive production artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: |
-            dist
-      - name: release
-        uses: actions/create-release@v1
+      # Get the version number and put it in a variable
+      - name: Get Version
+        id: version
+        run: |
+          echo "::set-output name=tag::$(git describe --abbrev=0)"
+      # Package the required files into a zip
+      - name: Package
+        run: |
+          mkdir ${{ github.event.repository.name }}
+          cp main.js manifest.json styles.css README.md ${{ github.event.repository.name }}
+          zip -r ${{ github.event.repository.name }}.zip ${{ github.event.repository.name }}
+      # Create the release on github
+      - name: Create Release
         id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.ref }}
         with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
           draft: false
           prerelease: false
-          release_name: ${{ steps.version.outputs.version }}
-          tag_name: ${{ github.ref }}
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-      - name: Upload release
+      # Upload the packaged release file
+      - name: Upload zip file
+        id: upload-zip
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./dist/dist.zip
-          asset_name: dist.zip
-          asset_content_type: application/gzip
+          asset_path: ./${{ github.event.repository.name }}.zip
+          asset_name: ${{ github.event.repository.name }}-${{ steps.version.outputs.tag }}.zip
+          asset_content_type: application/zip
